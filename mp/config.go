@@ -11,6 +11,8 @@ type WxMpConfig struct {
 	Secret string `conf:"weixin.mp.secret"`
 	//Token ,with client url
 	Token string `conf:"weixin.mp.token"`
+	//logger level
+	LoggerLevel string `conf:"weixin.mp.logger.level,default(INFO)"`
 }
 
 func NewWxMpConfig() (*WxMpConfig, error) {

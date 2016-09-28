@@ -1,156 +1,66 @@
 package mp
 
 import (
-	"bytes"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/json"
-	"encoding/xml"
-	"fmt"
-	"github.com/Sirupsen/logrus"
-	"github.com/ilisin/weixin"
-	"io"
-	"io/ioutil"
-	"net"
-	"net/http"
-	"strings"
-	"time"
+	"errors"
 )
 
-//params is the part of url
-func (this *WxMp) HttpGet(path string, withToken bool, params map[string]interface{}) (data []byte, err error) {
-	url := fmt.Sprintf("%v%v", this.config.ServiceURL, path)
-	if withToken {
-		if params == nil {
-			params = make(map[string]interface{})
-		}
-		if token, err := this.Token(); err == nil {
-			params["access_token"] = token.AccessToken
-		} else {
-			return nil, err
-		}
-	}
-	if params != nil {
-		pas := make([]string, len(params))
-		i := 0
-		for k, v := range params {
-			pas[i] = fmt.Sprintf("%v=%v", k, v)
-			i++
-		}
-		url = fmt.Sprintf("%v?%v", url, strings.Join(pas, "&"))
-	}
-	logrus.WithField("url", url).Debug("http get")
-	data, err = weixin.HttpGet(url, weixin.FILE_TYPE_JSON)
-	resp := Response{}
-	err = json.Unmarshal(data, &resp)
+var ErrToken = errors.New("cann't found the access token")
+
+func (this *WxMp) HttpGet(path string, params map[string]interface{}, respObj interface{}) error {
+	token, err := this.Token()
 	if err != nil {
-		logrus.Error(`HTTPGet 返回错误`, string(data), err)
-		return nil, err
+		return ErrToken
 	}
-	logrus.WithField("resp", resp).Debug("http get")
-	if resp.ErrCode != WXResultSeccuse {
-		logrus.WithFields(logrus.Fields{
-			"err":  err,
-			"resp": resp,
-		}).Info("HTTPGet")
-		if resp.ErrCode == WXResultNonMenu {
-			return nil, nil
+	if params == nil {
+		params = map[string]interface{}{
+			"access_token": token.AccessToken,
 		}
-		return nil, fmt.Errorf("[%v]%v", resp.ErrCode, resp.ErrMsg)
+	} else {
+		params["access_token"] = token.AccessToken
 	}
-	return data, nil
+	return this.HttpClient.HttpGetJson(path, params, respObj)
 }
 
-//params is the part of path params
-//bodyObj is the request data,with json format
-func (this *WxMp) HttpPost(path string, withToken bool, params map[string]interface{}, bodyObj interface{}) ([]byte, error) {
-	url := fmt.Sprintf("%v%v", this.config.ServiceURL, path)
-	if withToken {
-		if params == nil {
-			params = make(map[string]interface{})
-		}
-		if token, err := this.Token(); err == nil {
-			params["access_token"] = token.AccessToken
-		} else {
-			return nil, err
-		}
-	}
-	if params != nil {
-		pas := make([]string, len(params))
-		i := 0
-		for k, v := range params {
-			pas[i] = fmt.Sprintf("%v=%v", k, v)
-			i++
-		}
-		url = fmt.Sprintf("%v?%v", url, strings.Join(pas, "&"))
-	}
-	logrus.WithField("url", url).Debug("http post")
-	data, err := weixin.HttpPost(url, bodyObj, weixin.FILE_TYPE_JSON)
-	resp := Response{}
-	err = json.Unmarshal(data, &resp)
+func (this *WxMp) HttpGetWithCommonResponse(path string, params map[string]interface{}) error {
+	resp := &Response{}
+	err := this.HttpGet(path, params, resp)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if resp.ErrCode != WXResultSeccuse {
-		return nil, fmt.Errorf("[%v]%v", resp.ErrCode, resp.ErrMsg)
+	if resp.ErrCode != WXResultSuccess {
+		return errors.New(resp.ErrMsg)
 	}
-	return data, nil
+	return nil
 }
 
-//tls request
-func HttpTlsRequest(method, url, ca, cert, certKey string, obj interface{}) (data []byte, err error) {
-	//logrus.WithFields(logrus.Fields{
-	//"ca":      ca,
-	//"cert":    cert,
-	//"certKey": certKey,
-	//}).Info("http tls request")
-	var reader io.Reader = nil
-	pool := x509.NewCertPool()
-	caCrt, err := ioutil.ReadFile(ca)
-	if err != nil {
-		return nil, err
-	}
-	pool.AppendCertsFromPEM(caCrt)
-
-	clicrt, err := tls.LoadX509KeyPair(cert, certKey)
-	if err != nil {
-		return nil, err
-	}
-
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			//MaxVersion:   tls.VersionSSL30,
-			RootCAs:      pool,
-			Certificates: []tls.Certificate{clicrt},
-			//InsecureSkipVerify: true,
-		},
-		Proxy: http.ProxyFromEnvironment,
-		Dial: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).Dial,
-		TLSHandshakeTimeout: 10 * time.Second,
-	}
-
-	client := &http.Client{
-		Transport: tr,
-		Timeout:   weixin.HTTP_REQUEST_TIMEOUT}
-	if obj != nil {
-		dat, err := xml.Marshal(obj)
-		if err != nil {
-			return nil, err
+// params is the part of path params
+// bodyObj is the request data,with json format
+func (this *WxMp) HttpPost(path string, params map[string]interface{}, bodyObj interface{}, respObj interface{}) error {
+	if token, err := this.Token(); err == nil {
+		params = map[string]interface{}{
+			"access_token": token.AccessToken,
 		}
-		buffer := bytes.NewBuffer(dat)
-		reader = buffer
+	} else {
+		return ErrToken
 	}
-	req, err := http.NewRequest(method, url, reader)
+	return this.HttpClient.HttpPostJson(path, params, bodyObj, respObj)
+}
+
+func (this *WxMp) HttpPostWithCommonResponse(path string, params map[string]interface{}, bodyObj interface{}) error {
+	if token, err := this.Token(); err == nil {
+		params = map[string]interface{}{
+			"access_token": token.AccessToken,
+		}
+	} else {
+		return ErrToken
+	}
+	resp := Response{}
+	err := this.HttpClient.HttpPostJson(path, params, bodyObj, &resp)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
+	if resp.ErrCode != WXResultSuccess {
+		return errors.New(resp.ErrMsg)
 	}
-	defer resp.Body.Close()
-	return ioutil.ReadAll(resp.Body)
+	return nil
 }

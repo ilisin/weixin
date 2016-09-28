@@ -1,7 +1,6 @@
 package mp
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/Sirupsen/logrus"
 )
@@ -15,6 +14,7 @@ const (
 )
 
 type AuthToken struct {
+	Response
 	AccessToken  string `json:"access_token"`
 	ExpiresIn    int    `json:"expires_in"`
 	RefreshToken string `json:"refresh_token"` //用户刷新token
@@ -23,49 +23,48 @@ type AuthToken struct {
 	UnionId      string `json:"unionid"`
 }
 
-//获取auth2.0授权地址
-//redirectUrl:授权成功后的重定向地址
-//apiBase:为true时Scope为snsapi_base，否则为snsapi_userinfo
-//state：附加参数，回传给从定向地址
-func (this *WxMp) GetAuth2Url(redirectUrl string, apiBase bool, state string) string {
-	scope := "snsapi_userinfo"
-	if apiBase {
-		scope = "snsapi_base"
-	}
+type WXAuthScope string
+
+const (
+	WXAuthScopeUserInfo WXAuthScope = "snsapi_userinfo"
+	WxAuthScopeBase     WXAuthScope = "snsapi_base"
+)
+
+// get auth2.0 redirect url
+func (this *WxMp) GetAuth2Url(redirectUrl string, scope WXAuthScope, state string) string {
 	return fmt.Sprintf("%s?appid=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s#wechat_redirect", AUTHORIZE_URL, this.config.AppId, redirectUrl, scope, state)
 }
 
 func (this *WxMp) Auth2Token(code string) (*AuthToken, error) {
-	dat, err := this.HttpGet("/sns/oauth2/access_token", false, map[string]interface{}{
+	token := &AuthToken{}
+	err := this.HttpClient.HttpGetJson("/sns/oauth2/access_token", map[string]interface{}{
 		"appid":      this.config.AppId,
 		"secret":     this.config.Secret,
 		"code":       code,
 		"grant_type": "authorization_code",
-	})
+	}, token)
 	if err != nil {
 		return nil, err
 	}
-	authToken := &AuthToken{}
-	err = json.Unmarshal(dat, authToken)
-	if err != nil {
-		return nil, err
+	if er := token.Error(); er != nil {
+		return nil, er
 	}
-	return authToken, nil
+	return token, nil
 }
 
 func (this *WxMp) AuthRefreshToken(token *AuthToken) error {
-	dat, err := this.HttpGet("/sns/oauth2/refresh_token", false, map[string]interface{}{
+	respToken := &AuthToken{}
+	err := this.HttpClient.HttpGetJson("/sns/oauth2/refresh_token", map[string]interface{}{
 		"appid":         this.config.AppId,
 		"grant_type":    "refresh_token",
 		"refresh_token": token.RefreshToken,
-	})
+	}, respToken)
 	if err != nil {
 		return err
 	}
-	logrus.WithField("data", string(dat)).Debug("refresh token")
-	err = json.Unmarshal(dat, token)
-	if err != nil {
-		return err
+	if er := respToken.Error(); er != nil {
+		return er
 	}
+	token = respToken
 	return nil
 }

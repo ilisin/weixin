@@ -1,8 +1,8 @@
 package mp
 
 import (
-	"encoding/json"
 	"errors"
+
 	"github.com/Sirupsen/logrus"
 )
 
@@ -30,6 +30,7 @@ const (
 )
 
 type User struct {
+	Response
 	Subscribe     int          `json:"subscribe"` //1为已关注，0为未关注，拉取不到其他信息
 	OpenId        string       `json:"openid"`
 	NickName      string       `json:"nickname"`
@@ -46,6 +47,7 @@ type User struct {
 }
 
 type UserOpenIdList struct {
+	Response
 	Total      int                 `json:"total"`
 	Count      int                 `json:"count"`
 	Data       map[string][]string `json:"data"`
@@ -57,80 +59,22 @@ type UserList struct {
 }
 
 func (this *WxMp) UserCount() (count int, err error) {
-	dat, err := this.HttpGet("/cgi-bin/user/get", true, nil)
+	resp := &UserOpenIdList{}
+	err = this.HttpGet("/cgi-bin/user/get", nil, resp)
 	if err != nil {
 		return 0, err
 	}
-	userList := UserOpenIdList{}
-	err = json.Unmarshal(dat, &userList)
-	if err != nil {
-		return 0, err
-	}
-	return userList.Total, nil
+	return resp.Total, nil
 }
 
 func (this *WxMp) GetUser(openId string) (user *User, err error) {
-	dat, err := this.HttpGet("/cgi-bin/user/info", true, map[string]interface{}{
+	user = &User{}
+	err = this.HttpGet("/cgi-bin/user/info", map[string]interface{}{
 		"openid": openId,
 		"lang":   LanguageZhCN,
-	})
+	}, user)
 	if err != nil {
 		return nil, err
 	}
-	user = &User{}
-	err = json.Unmarshal(dat, user)
 	return user, err
-}
-
-//获取用户openId数组，最多10000个，nextOpenId传值，则从对应的用户查找
-func (this *WxMp) ReadUserOpenIds(nextOpenId string) (openIds []string, err error) {
-	var params map[string]interface{} = nil
-	if len(nextOpenId) > 0 {
-		params = map[string]interface{}{
-			"next_openid": nextOpenId,
-		}
-	}
-	dat, err := this.HttpGet("/cgi-bin/user/get", true, params)
-	if err != nil {
-		return nil, err
-	}
-	userList := UserOpenIdList{}
-	err = json.Unmarshal(dat, &userList)
-	if err != nil {
-		return nil, err
-	}
-	if x, ok := userList.Data["openid"]; ok {
-		return x, nil
-	}
-	return nil, ErrFetch
-}
-
-//上限未100个
-func (this *WxMp) ReadUsers(openIds []string) (users []*User, err error) {
-	array := make([]map[string]interface{}, len(openIds))
-	for i, openId := range openIds {
-		array[i] = map[string]interface{}{
-			"openid": openId,
-			"lang":   LanguageZhCN,
-		}
-	}
-	dat, err := this.HttpPost("/cgi-bin/user/info/batchget", true, nil, map[string]interface{}{
-		"user_list": array,
-	})
-	if err != nil {
-		return nil, err
-	}
-	userList := UserList{}
-	err = json.Unmarshal(dat, &userList)
-	users = userList.UserInfoList
-	return
-}
-
-//修改用户的备注
-func (this *WxMp) UserUpdateRemark(openId, remark string) error {
-	_, err := this.HttpPost("/cgi-bin/user/info/updateremark", true, nil, map[string]string{
-		"openid": openId,
-		"remark": remark,
-	})
-	return err
 }

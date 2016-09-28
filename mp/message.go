@@ -1,17 +1,7 @@
 package mp
 
 import (
-	"bytes"
-	"crypto/sha1"
-	"encoding/hex"
 	"encoding/xml"
-	"fmt"
-	"github.com/Sirupsen/logrus"
-	"io"
-	"io/ioutil"
-	"net/http"
-	"sort"
-	"strings"
 )
 
 type MessageType string
@@ -41,33 +31,33 @@ const (
 )
 
 type MessageImageItem struct {
-	MediaId string
+	MediaId string `xml:"MediaId" json:"media_id"`
 }
 
 type MessageVoiceItem struct {
-	MediaId string
+	MediaId string `xml:"MediaId" json:"media_id"`
 }
 
 type MessageVideoItem struct {
-	MediaId     string
-	Title       string
-	Description string
+	MediaId     string `xml:"MediaId"`
+	Title       string `xml:"Title"`
+	Description string `xml:"Description"`
 }
 
 type MessageMusicItem struct {
-	Title        string
-	Description  string
-	MusicUrl     string
-	HQMusicUrl   string
-	ThumbMediaId string
+	Title        string `xml:"Title" json:"title"`
+	Description  string `xml:"Description" json:"description"`
+	MusicUrl     string `xml:"MusicUrl" json:"musicurl"`
+	HQMusicUrl   string `xml:"HQMusicUrl" json:"hqmusicurl"`
+	ThumbMediaId string `xml:"ThumbMediaId" json:"thumb_media_id"`
 }
 
 //图文消息
 type MessageNewsItem struct {
-	Title       string `xml:"Title,omitempty"`
-	Description string `xml:"Description,omitempty"`
-	PicUrl      string `xml:"PicUrl,omitempty"`
-	Url         string `xml:"Url,omitempty"`
+	Title       string `xml:"Title,omitempty" json:"title"`
+	Description string `xml:"Description,omitempty" json:"description"`
+	PicUrl      string `xml:"PicUrl,omitempty" json:"picurl"`
+	Url         string `xml:"Url,omitempty" json:"url"`
 }
 
 type MessageHeader struct {
@@ -114,79 +104,96 @@ type MixMessage struct {
 	Articles     []MessageNewsItem `xml:"Articles>item,omitempty"`
 }
 
-func (this *WxMp) MessageFilter(request *http.Request, responseWriter http.ResponseWriter, callback func(*MixMessage) *MixMessage) error {
-	if request == nil {
-		return fmt.Errorf("request paramer error")
-	}
-	defer request.Body.Close()
-	dat, err := ioutil.ReadAll(request.Body)
-	if err != nil {
-		return err
-	}
-	logrus.WithField("dat", string(dat)).Info("messageFilter")
-	message := MixMessage{}
-	err = xml.Unmarshal(dat, &message)
-	if err != nil {
-		return err
-	}
-	logrus.WithField("message", message).Info("messageFilter")
-	repMessage := callback(&message)
-	if repMessage != nil {
-		repDat, err := xml.Marshal(repMessage)
-		logrus.WithField("message", string(repDat)).Info("response message")
-		buffer := bytes.NewBuffer(repDat)
-		responseWriter.Header().Set("Content-Type", "application/xml;charset=utf-8")
-		responseWriter.WriteHeader(http.StatusOK)
-		_, err = io.Copy(responseWriter, buffer)
-		return err
-	} else {
-		responseWriter.WriteHeader(http.StatusOK)
-	}
-	return nil
-}
+type MessageHandler func(*MixMessage) *MixMessage
 
-func (this *WxMp) MessageSignature(request *http.Request, responseWriter http.ResponseWriter) error {
-	values := request.URL.Query()
-	signature := values.Get("signature")
-	timestamp := values.Get("timestamp")
-	nonce := values.Get("nonce")
-	echoStr := values.Get("echostr")
-	logrus.WithFields(logrus.Fields{
-		"signature": signature,
-		"timestamp": timestamp,
-		"nonce":     nonce,
-		"echostr":   echoStr,
-	}).Debug("message signature")
-	strs := []string{this.config.Token, timestamp, nonce}
-	sort.Strings(strs)
-	tempStr := strings.Join(strs, "")
-	c := sha1.New()
-	_, err := io.WriteString(c, tempStr)
-	if err != nil {
-		return err
-	}
-	dat := c.Sum(nil)
-	afterSign := hex.EncodeToString(dat[:])
-	logrus.WithField("aftersign", afterSign).Debug("sign")
-	if afterSign == signature {
-		responseWriter.WriteHeader(http.StatusOK)
-		responseWriter.Write([]byte(echoStr))
-	} else {
-		responseWriter.WriteHeader(http.StatusBadRequest)
-		responseWriter.Write([]byte("sign error"))
-	}
-	return nil
-}
-
-//给指定用户放信息
+// send text to user
 func (this *WxMp) SendTextToUser(openId, text string) error {
 	msg := map[string]interface{}{
 		"touser":  openId,
-		"msgtype": "text",
+		"msgtype": MessageText,
 		"text": map[string]string{
 			"content": text,
 		},
 	}
-	_, err := this.HttpPost("/cgi-bin/message/custom/send", true, nil, msg)
-	return err
+	return this.HttpPostWithCommonResponse("/cgi-bin/message/custom/send", nil, msg)
+}
+
+func (this *WxMp) SendImageToUser(openId string, image *MessageImageItem) error {
+	msg := map[string]interface{}{
+		"touser":  openId,
+		"msgtype": MessageImage,
+		"image":   image,
+	}
+	return this.HttpPostWithCommonResponse("/cgi-bin/message/custom/send", nil, msg)
+}
+
+func (this *WxMp) SendVoiceToUser(openId string, voice *MessageVoiceItem) error {
+	msg := map[string]interface{}{
+		"touser":  openId,
+		"msgtype": MessageVoice,
+		"voice":   voice,
+	}
+	return this.HttpPostWithCommonResponse("/cgi-bin/message/custom/send", nil, msg)
+}
+
+func (this *WxMp) SendVideoToUser(openId string, video *MessageVideoItem, thumbId string) error {
+	msg := map[string]interface{}{
+		"touser":  openId,
+		"msgtype": MessageVideo,
+		"video": map[string]string{
+			"media_id":       video.MediaId,
+			"thumb_media_id": thumbId,
+			"title":          video.Title,
+			"description":    video.Description,
+		},
+	}
+	return this.HttpPostWithCommonResponse("/cgi-bin/message/custom/send", nil, msg)
+}
+
+func (this *WxMp) SendMusicToUser(openId string, music *MessageMusicItem) error {
+	msg := map[string]interface{}{
+		"touser":  openId,
+		"msgtype": MessageMusic,
+		"music":   music,
+	}
+	return this.HttpPostWithCommonResponse("/cgi-bin/message/custom/send", nil, msg)
+}
+
+func (this *WxMp) SendNewsToUser(openId string, news []MessageNewsItem) error {
+	msg := map[string]interface{}{
+		"touser":  openId,
+		"msgtype": MessageNews,
+		"news": map[string]interface{}{
+			"articles": news,
+		},
+	}
+	return this.HttpPostWithCommonResponse("/cgi-bin/message/custom/send", nil, msg)
+}
+
+func (this *WxMp) RegisterTextMessageHandle(handle MessageHandler) {
+	this.TextMessageHandler = handle
+}
+
+func (this *WxMp) RegisterImageMessageHandle(handle MessageHandler) {
+	this.ImageMessageHandler = handle
+}
+
+func (this *WxMp) RegisterVoiceMessageHandle(handle MessageHandler) {
+	this.VoiceMessageHandler = handle
+}
+
+func (this *WxMp) RegisterVideoMessageHandle(handle MessageHandler) {
+	this.VideoMessageHandler = handle
+}
+
+func (this *WxMp) RegisterShortVideoMessageHandle(handle MessageHandler) {
+	this.ShortVideoMessageHandler = handle
+}
+
+func (this *WxMp) RegisterLocationMessageHandle(handle MessageHandler) {
+	this.LocationMessageHandler = handle
+}
+
+func (this *WxMp) RegisterLinkMessageHandle(handle MessageHandler) {
+	this.LinkMessageHandler = handle
 }

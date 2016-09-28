@@ -3,6 +3,7 @@ package mp
 import (
 	"encoding/json"
 	"fmt"
+
 	"github.com/Sirupsen/logrus"
 )
 
@@ -174,20 +175,10 @@ func (this *Menu) Same(another *Menu) bool {
 
 //query menu from weixin server
 func (this *WxMp) GetMenu() (menu *Menu, err error) {
-	dat, err := this.HttpGet("/cgi-bin/menu/get", true, nil)
+	respMenu := ResponseMenu{}
+	err = this.HttpGet("/cgi-bin/menu/get", nil, &respMenu)
 	if err != nil {
 		logrus.Error(`获取菜单错误`, err)
-		return nil, err
-	}
-	if len(dat) == 0 {
-		logrus.Info(`未设置菜单`)
-		return nil, nil
-	}
-	logrus.Debug(`存在菜单数据`)
-	respMenu := ResponseMenu{}
-	err = json.Unmarshal(dat, &respMenu)
-	if err != nil {
-		logrus.Error(`获取菜单数据错误`, err)
 		return nil, err
 	}
 	return &respMenu.Menu, err
@@ -195,14 +186,15 @@ func (this *WxMp) GetMenu() (menu *Menu, err error) {
 
 //set weixin mp's menu
 func (this *WxMp) SetMenu(menu *Menu) error {
-	_, err := this.HttpPost("/cgi-bin/menu/create", true, nil, menu)
+	err := this.HttpPostWithCommonResponse("/cgi-bin/menu/create", nil, menu)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"menu": menu,
 			"err":  err,
 		}).Error("set weixin's menu")
+		return err
 	}
-	return err
+	return nil
 }
 
 //update menu,if menu is same with service menu,do nothing
@@ -228,6 +220,5 @@ func (this *WxMp) UpdateMenu(menu *Menu) error {
 
 //delete menu
 func (this *WxMp) DeleteMenu() error {
-	_, err := this.HttpGet("/cgi-bin/menu/delete", true, nil)
-	return err
+	return this.HttpGetWithCommonResponse("/cgi-bin/menu/delete", nil)
 }

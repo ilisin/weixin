@@ -16,6 +16,8 @@ type WxPayConfig struct {
 		Cert string `conf:"weixin.pay.cert.cert"`
 		Key  string `conf:"weixin.pay.cert.key"`
 	}
+	//logger level
+	LoggerLevel string `conf:"weixin.pay.logger.level,default(INFO)"`
 }
 
 func NewWxPayConfig() (*WxPayConfig, error) {

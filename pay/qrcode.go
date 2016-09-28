@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+	"github.com/ilisin/weixin/util"
 )
 
 type (
@@ -49,7 +50,7 @@ func (this *WxPay) MakeGoodsQrCode(pid string) string {
 		AppId:       this.config.AppId,
 		MchId:       this.config.MctId,
 		Timestamp:   time.Now().Unix(),
-		NonceString: productANonceString(),
+		NonceString: util.ProductANonceString(),
 		ProductId:   pid,
 	}
 	return fmt.Sprintf("weixin://wxpay/bizpayurl?appid=%v&mch_id=%v&nonce_str=%v&product_id=%v&time_stamp=%v&sign=%v",
